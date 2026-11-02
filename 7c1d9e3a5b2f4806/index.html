@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>JTV 7기 그룹 저장 시험</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171c;--sub:#5b6472;--line:#e3e6ea;--accent:#2563eb;--on-accent:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1013;--card:#171a1f;--ink:#eef0f3;--sub:#9aa3b0;--line:#272c34;--accent:#5b8def;--on-accent:#0b1020}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;-webkit-text-size-adjust:100%;word-break:keep-all;overflow-wrap:break-word}
+main{max-width:440px;margin:0 auto;padding:40px 16px 56px}
+.tag{display:inline-block;padding:2px 10px;border:1px solid var(--line);border-radius:999px;font-size:13px;color:var(--sub)}
+h1{margin:14px 0 6px;font-size:26px;line-height:1.25;letter-spacing:-.02em}
+.lead{margin:0 0 24px;color:var(--sub)}
+.btn{display:flex;align-items:center;justify-content:center;min-height:60px;margin-bottom:12px;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:18px;font-weight:700;text-decoration:none}
+.btn:active{opacity:.85}
+.how{margin:24px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.how li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.how b{display:block;margin-bottom:2px}
+.how span{color:var(--sub);font-size:15px}
+.note{margin:20px 0 0;color:var(--sub);font-size:14px}
+</style>
+<script>
+if (/KAKAOTALK/i.test(navigator.userAgent)) {
+  location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+}
+</script>
+</head>
+<body>
+<main>
+  <span class="tag">시험판 · 가짜 번호</span>
+  <h1>연락처 저장</h1>
+  <p class="lead">저장 화면이 자동으로 열립니다. 안 열리면 아래 버튼을 누르세요.</p>
+  <a class="btn" id="go" href="t1.vcf">연락처 저장</a>
+  <p class="note">저장한 뒤 연락처 앱에서 “JTV시험” 그룹(라벨)이 생겼는지 봐 주세요. 끝나면 “JTV시험”을 검색해 지우세요.</p>
+</main>
+<script>
+(function () {
+  var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  var url = new URL(ios ? 't2.vcf' : 't1.vcf', location.href).href;
+  document.getElementById('go').href = url;
+  if (!/KAKAOTALK/i.test(navigator.userAgent)) location.replace(url);
+})();
+</script>
+</body>
+</html>
