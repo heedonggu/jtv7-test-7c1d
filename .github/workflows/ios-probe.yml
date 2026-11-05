@@ -1,0 +1,79 @@
+name: ios-probe
+on: workflow_dispatch
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fake roster and site (no real data)
+        run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          pip -q install openpyxl
+          python - <<'PY'
+          import openpyxl
+          wb = openpyxl.Workbook()
+          ws = wb.active
+          ws.append([None, "fake roster", None, None])
+          for i, n in enumerate(["김하나", "이둘", "박셋", "최넷", "정다섯", "한여섯"], start=1):
+              ws.append([i, n, f"010-0000-{1000 + i}", ""])
+          wb.save("명단.xlsx")
+          PY
+          python probe/build_site.py 명단.xlsx site
+          echo "SLUG=$(ls site)" >> "$GITHUB_ENV"
+          cp probe/webshare.html site/webshare.html
+          (python3 -m http.server 8000 --directory site >/dev/null 2>&1 &)
+          sleep 2
+          curl -sI "http://localhost:8000/webshare.html" | head -1
+
+      - name: Boot newest iPhone simulator
+        run: |
+          UDID=$(python3 probe/pick_device.py)
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          mkdir -p shots
+          { sw_vers; xcodebuild -version; xcrun simctl list runtimes; xcrun simctl list devices booted; } > shots/env.txt 2>&1
+          cat shots/env.txt
+
+      - name: Build WebDriverAgent
+        run: |
+          git clone --depth 1 https://github.com/appium/WebDriverAgent.git wda
+          cd wda
+          xcodebuild build-for-testing -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner \
+            -destination "id=$UDID" -derivedDataPath ../wda-dd CODE_SIGNING_ALLOWED=NO > ../wda-build.log 2>&1 \
+            || { tail -60 ../wda-build.log; exit 1; }
+          tail -5 ../wda-build.log
+
+      - name: Start WebDriverAgent
+        run: |
+          cd wda
+          nohup xcodebuild test-without-building -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner \
+            -destination "id=$UDID" -derivedDataPath ../wda-dd CODE_SIGNING_ALLOWED=NO > ../wda.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -s http://127.0.0.1:8100/status | grep -q sessionId; then echo "WDA up after $i tries"; exit 0; fi
+            sleep 2
+          done
+          echo "WDA did not start"; tail -40 ../wda.log; exit 1
+
+      - name: Probe Safari flows
+        run: |
+          SLUG="$SLUG" OUT=shots python3 probe/probe.py
+
+      - name: Upload screenshots and trees
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-${{ matrix.os }}
+          path: |
+            shots
+            wda.log
+            wda-build.log
+          retention-days: 3

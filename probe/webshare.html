@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>share probe</title>
+<button id="b" style="font-size:28px;padding:20px;margin:20px">SHARE-VCF</button>
+<pre id="out"></pre>
+<script>
+var vcf = "BEGIN:VCARD\r\nVERSION:3.0\r\nN:;테스트1;;;\r\nFN:테스트1\r\nTEL;TYPE=CELL:010-0000-0001\r\nEND:VCARD\r\nBEGIN:VCARD\r\nVERSION:3.0\r\nN:;테스트2;;;\r\nFN:테스트2\r\nTEL;TYPE=CELL:010-0000-0002\r\nEND:VCARD\r\n";
+document.getElementById('b').onclick = async function () {
+  var f = new File([vcf], 'JTV7기.vcf', { type: 'text/vcard' });
+  try { await navigator.share({ files: [f] }); document.getElementById('out').textContent = 'shared'; }
+  catch (e) { document.getElementById('out').textContent = 'ERR ' + e.name + ' ' + e.message; }
+};
+</script>
