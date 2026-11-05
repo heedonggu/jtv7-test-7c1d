@@ -25,9 +25,8 @@ def import_sheet_open(its):  # 왼쪽 위 취소 + 오른쪽 위 버튼이 같�
 
 
 def open_sheet(tag, url):
-    for attempt in (1, 2, 3):
+    for attempt in (1, 2, 3, 4):
         P.terminate("com.apple.mobilesafari")
-        P.terminate("com.apple.MobileAddressBook")
         P.openurl(url)
         got, its = P.wait_ui(
             "preview",
@@ -44,13 +43,16 @@ def open_sheet(tag, url):
         P.snap(f"{tag}-2-sharesheet")
         if not cs:
             continue
+        time.sleep(2)  # 공유 창은 내용이 늦게 차면서 밀린다
+        cs = P.pick(items_now(), ("Cell",), lambda l: l in CONTACTS, loose=True) or cs
         P.tap_it(cs[min(P.PICK, len(cs) - 1)])
-        got, its = P.wait_ui("import-ui", import_sheet_open, 120)
+        got, its = P.wait_ui("import-ui", import_sheet_open, 45)
         if got:
             time.sleep(1)
             P.snap(f"{tag}-3-importsheet")
             return items_now()
         P.snap(f"{tag}-no-import-ui-{attempt}")
+        P.warm_contacts()
     return None
 
 
@@ -90,7 +92,8 @@ def run(tag, url, mode):
     for step in range(1, 4):
         time.sleep(2.5)
         its = P.snap(f"{tag}-5-step{step}")
-        bb = [b for b in bottom_buttons(its) if b["label"] not in CANCEL]
+        allb = bottom_buttons(its)
+        bb = [b for b in allb if b["label"] not in CANCEL] if any(b["label"] in CANCEL for b in allb) else []
         txt = [i["label"] for i in its if i["vis"] and i["type"] == "StaticText" and i["y"] > P.H * 0.35 and i["label"]]
         P.say(f"[{tag}] step{step} text={txt[:4]} buttons={[b['label'] for b in bb]}")
         if not bb:
@@ -107,6 +110,7 @@ if __name__ == "__main__":
     P.session()
     try:
         P.db_rows("00-before")
+        P.warm_contacts()
         for tag, url, mode in [
             ("KA-m2-addall", P.BASE + "m/2.vcf", "addall"),
             ("KB-m2-addall-again", P.BASE + "m/2.vcf", "addall"),

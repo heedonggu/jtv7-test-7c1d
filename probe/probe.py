@@ -23,7 +23,7 @@ LOG = open(OUT / "log.txt", "w", encoding="utf-8")
 SAMPLE = ("Anna", "Daniel", "David", "Hank", "John", "Kate")
 sid = None
 W, H = 440.0, 956.0  # 화면(pt). session()에서 window/size로 덮어쓴다
-PREFER = ("Create New Contacts", "Update", "Merge", "Add", "OK", "Continue")  # 확인창에서 눌러도 되는 버튼(앞쪽 우선)
+PREFER = ("Create New Contact", "Update", "Merge", "Add", "OK", "Continue")  # 확인창에서 눌러도 되는 버튼(앞쪽 우선). 'Create New Contact'는 단수·복수 모두 잡는다
 
 
 def say(*a):
@@ -228,11 +228,16 @@ def db_rows(tag):  # 시뮬레이터 연락처 DB에서 샘플이 아닌 사람�
     return rows
 
 
+def warm_contacts():
+    """연락처 앱을 미리 켜 둔다. v8에서 연락처 앱이 꺼진 채로 공유 창의 '연락처'를 누르면 앱이 안 열리고 사파리 첫 화면으로 돌아왔다(켜 둔 상태에선 열림)."""
+    subprocess.run(["xcrun", "simctl", "launch", "booted", "com.apple.MobileAddressBook"], check=False)
+    time.sleep(12)
+
+
 def open_import_sheet(tag, url):
     """사파리에서 vcf를 열고 공유 -> 연락처까지 눌러 가져오기 화면(오른쪽 위 Save, 머리글 Add All N)을 띄운다."""
-    for attempt in (1, 2, 3):
+    for attempt in (1, 2, 3, 4):
         terminate("com.apple.mobilesafari")
-        terminate("com.apple.MobileAddressBook")
         openurl(url)
         got, its = wait_ui(
             "preview",
@@ -254,20 +259,26 @@ def open_import_sheet(tag, url):
         if not cs:
             snap(f"{tag}-no-contacts-{attempt}")
             continue
+        time.sleep(2)  # 공유 창은 내용이 늦게 차면서 밀린다 -> 자리 잡은 뒤 다시 읽어서 누른다
+        cs = pick(items(src()), ("Cell",), lambda l: l == "Contacts", loose=True) or cs
         tap_it(cs[min(PICK, len(cs) - 1)])
         got, its = wait_ui(
             "import-ui",
             lambda its: [i for i in its if i["vis"] and i["type"] == "Button" and i["label"] == "Save" and i["y"] < H * 0.3],
-            120,
+            45,
         )
         if got:
             return its
         snap(f"{tag}-no-import-ui-{attempt}")
+        warm_contacts()  # 다음 시도 전에 연락처 앱을 켜 둔다
     return None
 
 
-def sheet_buttons(its):  # 화면 아래쪽 확인창의 버튼들(취소 제외)
-    return [i for i in its if i["vis"] and i["type"] in ("Button", "MenuItem") and i["y"] > H * 0.35 and i["label"] and i["label"] != "Cancel"]
+def sheet_buttons(its):  # 화면 아래쪽 확인창의 버튼들(취소 제외). 맨 아래 Cancel이 같이 보일 때만 확인창으로 본다(연락처 목록의 Add 버튼을 누르지 않게)
+    bottom = [i for i in its if i["vis"] and i["type"] in ("Button", "MenuItem") and i["y"] > H * 0.35 and i["label"]]
+    if not any(b["label"] == "Cancel" for b in bottom):
+        return []
+    return [b for b in bottom if b["label"] != "Cancel"]
 
 
 def sheet_text(its):
@@ -315,12 +326,15 @@ def run_import(tag, url, mode):
 
 def main():
     db_rows("00-before")
+    warm_contacts()
+    # 사람 묶음을 따로 써서 앞선 시험이 뒤 시험을 어지럽히지 않게 한다(g1 = Save 묶음, g2 = Add All 묶음)
     plan = [
-        ("A-m2-addall", BASE + "m/2.vcf", "addall"),               # 빈 상태에서 5명 -> 'did not match' 확인창 -> Create New Contacts
-        ("B-m2-addall-again", BASE + "m/2.vcf", "addall"),         # 같은 5명을 같은 방법으로 다시 -> 중복이 생기나
-        ("C-samename-addall", SITE + "t_samename.vcf", "addall"),  # 같은 이름·다른 번호 + 새 사람
-        ("D-samenum-addall", SITE + "t_samenum.vcf", "addall"),    # 다른 이름·같은 번호 + 새 사람
-        ("E-m2-save", BASE + "m/2.vcf", "save"),                   # 대조: 오른쪽 위 Save로 같은 5명 -> 중복이 생기나
+        ("S1-save", SITE + "g1.vcf", "save"),                 # 빈 상태에서 2명 Save -> 2명 생기나
+        ("S2-save-again", SITE + "g1.vcf", "save"),           # 같은 2명을 Save로 다시 -> 사람이 또 생기나(중복)
+        ("H1-addall", SITE + "g2.vcf", "addall"),             # 빈 상태에서 2명 Add All -> 'did not match' 확인창 -> Create New Contacts
+        ("H2-addall-again", SITE + "g2.vcf", "addall"),       # 같은 2명을 Add All로 다시 -> 사람이 또 생기나, 번호가 또 붙나
+        ("H3-samename", SITE + "g2n.vcf", "addall"),          # 같은 이름·다른 번호 + 새 사람
+        ("H4-samenum", SITE + "g2p.vcf", "addall"),           # 다른 이름·같은 번호 + 새 사람
     ]
     for tag, url, mode in plan:
         say(f"##### {tag}: {mode} {url}")
