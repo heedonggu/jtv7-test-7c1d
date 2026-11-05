@@ -6,7 +6,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26, macos-15]
+        include:
+          - { os: macos-15, ios: "18", pick: "0" }
+          - { os: macos-15, ios: "18", pick: "1" }
+          - { os: macos-26, ios: "26", pick: "0" }
+          - { os: macos-26, ios: "26", pick: "1" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 50
     steps:
@@ -35,7 +39,7 @@ jobs:
 
       - name: Boot newest iPhone simulator
         run: |
-          UDID=$(python3 probe/pick_device.py)
+          UDID=$(IOS_MAJOR="${{ matrix.ios }}" python3 probe/pick_device.py)
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
@@ -65,13 +69,13 @@ jobs:
 
       - name: Probe Safari flows
         run: |
-          SLUG="$SLUG" OUT=shots python3 probe/probe.py
+          SLUG="$SLUG" PICK="${{ matrix.pick }}" OUT=shots python3 probe/probe.py
 
       - name: Upload screenshots and trees
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: probe-${{ matrix.os }}
+          name: probe-ios${{ matrix.ios }}-pick${{ matrix.pick }}
           path: |
             shots
             wda.log
