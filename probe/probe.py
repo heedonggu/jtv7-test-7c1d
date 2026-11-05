@@ -173,6 +173,27 @@ def untick(name):
     time.sleep(0.8)
 
 
+def count_label():
+    es = find_all("label ENDSWITH '명 선택'")
+    if not es:
+        return None
+    return call("GET", S(f"/element/{es[0]}/attribute/label")).get("value")
+
+
+def select_only(names):  # 모두 해제 후 원하는 사람만 체크(탭이 빗나가면 다시 누른다)
+    tap("label == '모두 해제'")
+    time.sleep(1)
+    n = 0
+    for name in names:
+        for _ in range(3):
+            tap(f"type == 'XCUIElementTypeStaticText' AND label == '{name}'")
+            time.sleep(1)
+            if count_label() == f"{n + 1}명 선택":
+                n += 1
+                break
+    say("[select_only] count label:", count_label())
+
+
 def share_to_contacts(tag):
     if not wait_for("preview", ["label == 'Create New Contact'", "label BEGINSWITH 'Update Contact'"], 60):
         snap(tag + "-no-preview")
@@ -183,18 +204,24 @@ def share_to_contacts(tag):
         snap(tag + "-no-share-button")
         return False
     snap(tag + "-share-sheet")
-    ok = wait_tap("contacts", ["type == 'XCUIElementTypeCell' AND label == 'Contacts'"], 10, n=PICK)
-    time.sleep(4)
-    snap(tag + "-after-contacts")
-    return ok
+    if not wait_tap("contacts", ["type == 'XCUIElementTypeCell' AND label == 'Contacts'"], 10, n=PICK):
+        return False
+    if wait_for("import-sheet", ["label BEGINSWITH 'Add All'"], 25):
+        xml = snap(tag + "-import-sheet")
+        m = re.search(r'label="(Add All \d+ Contacts)"', xml)
+        say("IMPORT-SHEET:", m.group(1) if m else None)
+        wait_tap("save", ["label == 'Save'"], 10)
+        time.sleep(3)
+        return True
+    snap(tag + "-no-import-sheet")
+    return False
 
 
-def flow_partial():  # 일부만 고르고 저장 -> 미리보기 -> 공유 -> 연락처 -> 고른 사람만 들어갔는지
+def flow_partial():  # 일부만 고르고 저장 -> 미리보기 -> 공유 -> 연락처 -> 목록 화면 -> 저장 -> 고른 사람만 들어갔는지
     contacts_state("00-before")
     open_page()
-    untick("박셋")
-    untick("최넷")
-    snap("10-page-unticked")
+    select_only(["김하나", "정다섯", "한여섯"])
+    snap("10-page-selected")
     wait_tap("save3", ["label CONTAINS '3명 저장'"], 10)
     share_to_contacts("11-partial")
     contacts_state("12-after-partial")
