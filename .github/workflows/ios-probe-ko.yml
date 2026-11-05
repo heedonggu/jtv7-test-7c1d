@@ -1,0 +1,93 @@
+name: ios-probe-ko
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fake roster and site (no real data)
+        run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          pip -q install openpyxl
+          python - <<'PY'
+          import openpyxl
+          wb = openpyxl.Workbook()
+          ws = wb.active
+          ws.append([None, "fake roster", None, None])
+          for i, n in enumerate(["김하나", "이둘", "박셋", "최넷", "정다섯", "한여섯"], start=1):
+              ws.append([i, n, f"010-0000-{1000 + i}", ""])
+          wb.save("명단.xlsx")
+          PY
+          python probe/build_site.py 명단.xlsx site
+          echo "SLUG=$(ls site)" >> "$GITHUB_ENV"
+          (python3 -m http.server 8000 --directory site >/dev/null 2>&1 &)
+          sleep 2
+
+      - name: Boot iPhone simulator in Korean
+        run: |
+          UDID=$(IOS_MAJOR=18 python3 probe/pick_device.py)
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLanguages -array ko
+          xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLocale -string ko_KR
+          xcrun simctl shutdown "$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          mkdir -p shots
+          { sw_vers; xcodebuild -version; xcrun simctl list devices booted; } > shots/env.txt 2>&1
+          cat shots/env.txt
+
+      - name: Build WebDriverAgent
+        run: |
+          git clone --depth 1 https://github.com/appium/WebDriverAgent.git wda
+          cd wda
+          xcodebuild build-for-testing -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner \
+            -destination "id=$UDID" -derivedDataPath ../wda-dd CODE_SIGNING_ALLOWED=NO > ../wda-build.log 2>&1 \
+            || { tail -60 ../wda-build.log; exit 1; }
+          tail -5 ../wda-build.log
+
+      - name: Start WebDriverAgent (retry, re-pick device if it vanished)
+        run: |
+          cd wda
+          for attempt in 1 2 3; do
+            xcrun simctl list devices | grep -E "Booted|$UDID" || true
+            if ! xcrun simctl list devices | grep "$UDID" | grep -q Booted; then
+              echo "device $UDID not booted/not found -> re-pick and boot"
+              UDID=$(IOS_MAJOR=18 python3 ../probe/pick_device.py)
+              echo "UDID=$UDID" >> "$GITHUB_ENV"
+              xcrun simctl boot "$UDID" || true
+              xcrun simctl bootstatus "$UDID" -b || true
+            fi
+            nohup xcodebuild test-without-building -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner \
+              -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath ../wda-dd CODE_SIGNING_ALLOWED=NO > ../wda.log 2>&1 &
+            XPID=$!
+            for i in $(seq 1 60); do
+              if curl -s http://127.0.0.1:8100/status | grep -q sessionId; then echo "WDA up (attempt $attempt, try $i)"; exit 0; fi
+              if ! kill -0 "$XPID" 2>/dev/null; then break; fi
+              sleep 2
+            done
+            echo "WDA attempt $attempt failed"; tail -30 ../wda.log
+            kill "$XPID" 2>/dev/null || true
+            sleep 5
+          done
+          echo "WDA did not start"; exit 1
+
+      - name: Probe Korean flows
+        run: |
+          SLUG="$SLUG" PICK=0 UDID="$UDID" OUT=shots python3 probe/probe_ko.py
+
+      - name: Upload screenshots and trees
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-ios18-ko
+          path: |
+            shots
+            wda.log
+            wda-build.log
+          retention-days: 3
