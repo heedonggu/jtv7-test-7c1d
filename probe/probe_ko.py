@@ -26,6 +26,7 @@ def import_sheet_open(its):  # 왼쪽 위 취소 + 오른쪽 위 버튼이 같�
 
 def open_sheet(tag, url):
     for attempt in (1, 2, 3, 4):
+        P.warm_contacts()
         P.terminate("com.apple.mobilesafari")
         P.openurl(url)
         got, its = P.wait_ui(
@@ -52,7 +53,6 @@ def open_sheet(tag, url):
             P.snap(f"{tag}-3-importsheet")
             return items_now()
         P.snap(f"{tag}-no-import-ui-{attempt}")
-        P.warm_contacts()
     return None
 
 
@@ -110,7 +110,6 @@ if __name__ == "__main__":
     P.session()
     try:
         P.db_rows("00-before")
-        P.warm_contacts()
         for tag, url, mode in [
             ("KA-m2-addall", P.BASE + "m/2.vcf", "addall"),
             ("KB-m2-addall-again", P.BASE + "m/2.vcf", "addall"),

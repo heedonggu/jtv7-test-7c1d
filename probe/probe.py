@@ -100,10 +100,15 @@ def tap_it(it):
 def src():
     r = call("GET", S("/source"), timeout=90)
     v = r.get("value")
-    return v if isinstance(v, str) else ""
+    if isinstance(v, str):
+        return v
+    say("  /source failed:", str(r)[:160])
+    return ""
 
 
 def items(xml):
+    if not xml:
+        return []
     try:
         root = ET.fromstring(xml.encode("utf-8"))
     except Exception as e:  # noqa: BLE001
@@ -152,8 +157,14 @@ def pick(its, types, pred, y0=None, y1=None, loose=False):
 def wait_ui(name, finder, timeout=90, every=2.0):
     t0 = time.time()
     its = []
+    empty = 0
     while time.time() - t0 < timeout:
         its = items(src())
+        empty = empty + 1 if not its else 0
+        if empty >= 5:
+            say(f"[{name}] /source empty x5 -> new WDA session")
+            session()
+            empty = 0
         got = finder(its)
         if got:
             say(f"[{name}] seen after {time.time() - t0:.0f}s: " + str([(g["type"], g["label"][:28], int(g["x"]), int(g["y"])) for g in got][:4]))
@@ -229,14 +240,18 @@ def db_rows(tag):  # 시뮬레이터 연락처 DB에서 샘플이 아닌 사람�
 
 
 def warm_contacts():
-    """연락처 앱을 미리 켜 둔다. v8에서 연락처 앱이 꺼진 채로 공유 창의 '연락처'를 누르면 앱이 안 열리고 사파리 첫 화면으로 돌아왔다(켜 둔 상태에선 열림)."""
+    """연락처 앱을 껐다가 다시 켜 둔다. 꺼진 채로 공유 창의 '연락처'를 누르면 앱이 안 열리고 사파리 첫 화면으로 돌아왔고,
+    안 끄면 지난번 가져오기 화면이 남아 새 파일 대신 옛 파일을 가져왔다."""
+    subprocess.run(["xcrun", "simctl", "terminate", "booted", "com.apple.MobileAddressBook"], check=False)
+    time.sleep(2)
     subprocess.run(["xcrun", "simctl", "launch", "booted", "com.apple.MobileAddressBook"], check=False)
-    time.sleep(12)
+    time.sleep(8)
 
 
 def open_import_sheet(tag, url):
     """사파리에서 vcf를 열고 공유 -> 연락처까지 눌러 가져오기 화면(오른쪽 위 Save, 머리글 Add All N)을 띄운다."""
     for attempt in (1, 2, 3, 4):
+        warm_contacts()
         terminate("com.apple.mobilesafari")
         openurl(url)
         got, its = wait_ui(
@@ -270,7 +285,6 @@ def open_import_sheet(tag, url):
         if got:
             return its
         snap(f"{tag}-no-import-ui-{attempt}")
-        warm_contacts()  # 다음 시도 전에 연락처 앱을 켜 둔다
     return None
 
 
@@ -326,7 +340,6 @@ def run_import(tag, url, mode):
 
 def main():
     db_rows("00-before")
-    warm_contacts()
     # 사람 묶음을 따로 써서 앞선 시험이 뒤 시험을 어지럽히지 않게 한다(g1 = Save 묶음, g2 = Add All 묶음)
     plan = [
         ("S1-save", SITE + "g1.vcf", "save"),                 # 빈 상태에서 2명 Save -> 2명 생기나

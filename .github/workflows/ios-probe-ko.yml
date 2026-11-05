@@ -79,7 +79,7 @@ jobs:
 
       - name: Probe Korean flows
         run: |
-          SLUG="$SLUG" PICK=0 UDID="$UDID" OUT=shots python3 probe/probe_ko.py
+          SLUG="$SLUG" PICK=1 UDID="$UDID" OUT=shots python3 probe/probe_ko.py
 
       - name: Upload screenshots and trees
         if: always()
