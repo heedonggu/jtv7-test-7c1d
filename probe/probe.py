@@ -1,10 +1,12 @@
 """iOS 시뮬레이터 사파리에서 'vcf 여러 명 저장' 화면을 실제로 눌러 보고 화면·UI 트리를 남긴다.
-WebDriverAgent(8100) HTTP API만 쓴다. 가짜 명단만 다룬다. (v3: 공유->연락처 가져오기 후 연락처 앱 인원 세기)"""
+WebDriverAgent(8100) HTTP API만 쓴다. 가짜 명단만 다룬다.
+(v6: 연락처 DB를 직접 세어 중복을 확인하고, '모든 연락처 추가' 머리글 선택지도 시험한다)"""
 import base64
 import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -15,9 +17,12 @@ OUT.mkdir(parents=True, exist_ok=True)
 WDA = "http://127.0.0.1:8100"
 BASE = f"http://localhost:8000/{os.environ['SLUG']}/"
 PICK = int(os.environ.get("PICK", "0"))  # 공유 시트의 'Contacts' 두 개 중 몇 번째를 누를지
+ACTION = os.environ.get("ACTION", "save")  # save: 오른쪽 위 Save / header: 'Add All N Contacts' 머리글을 눌러 선택지를 본다
+OPT = int(os.environ.get("OPT", "0"))  # header일 때 나온 선택지 중 몇 번째를 누를지
 LOG = open(OUT / "log.txt", "w", encoding="utf-8")
 sid = None
-HANGUL = re.compile(r'label="([가-힣]{2,4})"')
+BSL = chr(92)  # 역슬래시 (정규식 이스케이프 오타 방지)
+LABEL_RE = re.compile(r"<XCUIElementType(" + BSL + r"w+)[^>]*?" + BSL + r'blabel="([^"]*)"')
 
 
 def say(*a):
@@ -118,8 +123,7 @@ def snap(name):
     xml = s.get("value") if isinstance(s.get("value"), str) else json.dumps(s)[:2000]
     (OUT / f"{name}.xml").write_text(xml, encoding="utf-8")
     labs = []
-    for m in re.finditer(r'<XCUIElementType(\w+)[^>]*?\blabel="([^"]+)"', xml):
-        t, label = m.group(1), m.group(2)
+    for t, label in LABEL_RE.findall(xml):
         item = f"{t}:{label[:48]}"
         if t in ("Button", "Link", "Cell", "MenuItem", "Alert", "Sheet", "StaticText", "Other") and item not in labs:
             labs.append(item)
@@ -149,15 +153,27 @@ def tips():  # 사파리 첫 실행 안내 말풍선 닫기
             time.sleep(1)
 
 
-NAMES = ["김하나", "박셋", "정다섯", "최넷", "한여섯"]
+def db_counts(tag):  # 시뮬레이터 연락처 DB를 직접 센다(이름별 개수)
+    udid = os.environ.get("UDID", "")
+    root = pathlib.Path.home() / "Library/Developer/CoreSimulator/Devices" / udid / "data"
+    found = list(root.glob("Library/AddressBook/AddressBook.sqlitedb")) or list(root.glob("**/AddressBook.sqlitedb"))
+    if not found:
+        say(f"DB[{tag}]: AddressBook.sqlitedb not found under {root}")
+        return None
+    tmp = pathlib.Path("/tmp/abcopy")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir()
+    for f in found[0].parent.glob("AddressBook.sqlitedb*"):
+        shutil.copy(f, tmp / f.name)
+    q = "select First, count(*) from ABPerson group by First order by First;"
+    r = subprocess.run(["sqlite3", str(tmp / "AddressBook.sqlitedb"), q], capture_output=True, text=True)
+    say(f"DB[{tag}]: " + r.stdout.strip().replace(chr(10), " | ") + " " + r.stderr.strip()[:200])
+    return r.stdout
 
 
-def contacts_state(tag):
+def contacts_app(tag):
     launch("com.apple.MobileAddressBook")
-    xml = snap(tag)
-    st = {n: len(re.findall(r'XCUIElementTypeCell[^>]*label="%s"' % n, xml)) for n in NAMES}
-    say(f"CONTACTS[{tag}]: {st}")
-    return st
+    snap(tag)
 
 
 def open_page():
@@ -165,12 +181,6 @@ def open_page():
     openurl(BASE + "?me=2")
     wait_for("page", ["label CONTAINS '명 저장'"], 60)
     tips()
-
-
-def untick(name):
-    ok = tap(f"type == 'XCUIElementTypeStaticText' AND label == '{name}'")
-    say(f"[untick {name}] {ok}")
-    time.sleep(0.8)
 
 
 def count_label():
@@ -194,7 +204,11 @@ def select_only(names):  # 모두 해제 후 원하는 사람만 체크(탭이 �
     say("[select_only] count label:", count_label())
 
 
-def share_to_contacts(tag):
+def button_labels(xml):
+    return [label for t, label in LABEL_RE.findall(xml) if t in ("Button", "MenuItem", "Cell") and label]
+
+
+def share_to_contacts(tag, action):
     if not wait_for("preview", ["label == 'Create New Contact'", "label BEGINSWITH 'Update Contact'"], 60):
         snap(tag + "-no-preview")
         return False
@@ -206,39 +220,61 @@ def share_to_contacts(tag):
     snap(tag + "-share-sheet")
     if not wait_tap("contacts", ["type == 'XCUIElementTypeCell' AND label == 'Contacts'"], 10, n=PICK):
         return False
-    if wait_for("import-sheet", ["label BEGINSWITH 'Add All'"], 25):
-        xml = snap(tag + "-import-sheet")
-        m = re.search(r'label="(Add All \d+ Contacts)"', xml)
-        say("IMPORT-SHEET:", m.group(1) if m else None)
+    # 가져오기 화면(오른쪽 위 Save)이 뜰 때까지 기다린다. 제목(Add All N Contacts)이 안 읽혀도 Save는 찾힌다.
+    if not wait_for("import-ui", ["label == 'Save'"], 30):
+        snap(tag + "-no-import-ui")
+        return False
+    xml = snap(tag + "-import-sheet")
+    m = re.search(r"Add All (" + BSL + r"d+) Contacts", xml)
+    say("IMPORT-SHEET title:", m.group(0) if m else None)
+    if action == "save":
         wait_tap("save", ["label == 'Save'"], 10)
         time.sleep(3)
         return True
-    snap(tag + "-no-import-sheet")
+    # header: 'Add All N Contacts' 머리글을 눌러 나오는 선택지를 본다
+    before = set(button_labels(xml))
+    if not wait_tap("header", ["label BEGINSWITH 'Add All'"], 10):
+        say("[header] not tappable")
+        return False
+    xml2 = snap(tag + "-header-options")
+    new = [x for x in button_labels(xml2) if x not in before and x not in ("Cancel",)]
+    say("HEADER-OPTIONS (new buttons):", new)
+    if len(new) > OPT:
+        pick = new[OPT]
+        say("[header] choosing option:", pick)
+        wait_tap("header-option", [f"label == '{pick}'"], 10)
+        time.sleep(3)
+        snap(tag + "-after-option")
+        return True
+    say("[header] no such option index", OPT)
     return False
 
 
-def flow_partial():  # 일부만 고르고 저장 -> 미리보기 -> 공유 -> 연락처 -> 목록 화면 -> 저장 -> 고른 사람만 들어갔는지
-    contacts_state("00-before")
+def flow_partial():  # 일부만 고르고 저장 -> 고른 사람만 들어갔는지
+    db_counts("00-before")
     open_page()
     select_only(["김하나", "정다섯", "한여섯"])
     snap("10-page-selected")
     wait_tap("save3", ["label CONTAINS '3명 저장'"], 10)
-    share_to_contacts("11-partial")
-    contacts_state("12-after-partial")
+    share_to_contacts("11-partial", "save")
+    db_counts("12-after-partial")
+    contacts_app("12-contacts-app")
 
 
-def flow_full():  # 전원 저장(이미 3명 있는 상태) -> 5명이 되고 중복은 없어야 한다
+def flow_full_dup():  # 이미 3명 있는 상태에서 전원 5명 -> 중복이 생기는지(ACTION/OPT 별로)
     open_page()
     snap("20-page-full")
     wait_tap("save5", ["label CONTAINS '5명 저장'"], 10)
-    share_to_contacts("21-full")
-    contacts_state("22-after-full")
+    share_to_contacts("21-full", ACTION)
+    db_counts("22-after-full")
+    contacts_app("22-contacts-app")
 
 
 if __name__ == "__main__":
     subprocess.run("sw_vers; xcrun simctl list devices booted; xcrun simctl list runtimes", shell=True, check=False)
+    say("ACTION", ACTION, "OPT", OPT, "PICK", PICK)
     session()
-    for f in (flow_partial, flow_full):
+    for f in (flow_partial, flow_full_dup):
         try:
             f()
         except Exception as e:  # noqa: BLE001

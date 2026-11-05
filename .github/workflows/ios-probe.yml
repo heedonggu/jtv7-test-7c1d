@@ -7,8 +7,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-15, ios: "18", pick: "0" }
-          - { os: macos-26, ios: "26", pick: "1" }
+          - { os: macos-26, ios: "26", pick: "1", action: save, opt: "0" }
+          - { os: macos-26, ios: "26", pick: "1", action: header, opt: "0" }
+          - { os: macos-26, ios: "26", pick: "1", action: header, opt: "1" }
+          - { os: macos-15, ios: "18", pick: "0", action: save, opt: "0" }
+          - { os: macos-15, ios: "18", pick: "0", action: header, opt: "0" }
+          - { os: macos-15, ios: "18", pick: "0", action: header, opt: "1" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 50
     steps:
@@ -67,13 +71,13 @@ jobs:
 
       - name: Probe Safari flows
         run: |
-          SLUG="$SLUG" PICK="${{ matrix.pick }}" OUT=shots python3 probe/probe.py
+          SLUG="$SLUG" PICK="${{ matrix.pick }}" ACTION="${{ matrix.action }}" OPT="${{ matrix.opt }}" UDID="$UDID" OUT=shots python3 probe/probe.py
 
       - name: Upload screenshots and trees
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: probe-ios${{ matrix.ios }}-pick${{ matrix.pick }}
+          name: probe-ios${{ matrix.ios }}-${{ matrix.action }}-opt${{ matrix.opt }}
           path: |
             shots
             wda.log
