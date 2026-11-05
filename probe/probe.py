@@ -1,5 +1,5 @@
 """iOS 시뮬레이터 사파리에서 'vcf 여러 명 저장' 화면을 실제로 눌러 보고 화면·UI 트리를 남긴다.
-WebDriverAgent(8100) HTTP API만 쓴다. 가짜 명단만 다룬다."""
+WebDriverAgent(8100) HTTP API만 쓴다. 가짜 명단만 다룬다. (v2: predicate string, 대기 후 탭)"""
 import base64
 import json
 import os
@@ -59,21 +59,40 @@ def eid_of(r):
     return None
 
 
+def find(pred):
+    return eid_of(call("POST", S("/element"), {"using": "predicate string", "value": pred}, timeout=60))
+
+
 def tap(pred):
-    e = eid_of(call("POST", S("/element"), {"using": "-ios predicate string", "value": pred}))
+    e = find(pred)
     if not e:
         return False
     r = call("POST", S(f"/element/{e}/click"))
     return "_http" not in r and "_err" not in r
 
 
-def tap_any(name, *preds):
-    for p in preds:
-        if tap(p):
-            say(f"[{name}] tapped: {p}")
-            time.sleep(2.5)
-            return True
-    say(f"[{name}] NOT FOUND: {preds}")
+def wait_tap(name, preds, timeout=45):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for p in preds:
+            if tap(p):
+                say(f"[{name}] tapped: {p} (after {time.time() - t0:.0f}s)")
+                time.sleep(2.5)
+                return True
+        time.sleep(1.5)
+    say(f"[{name}] NOT FOUND after {timeout}s: {preds}")
+    return False
+
+
+def wait_for(name, preds, timeout=45):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for p in preds:
+            if find(p):
+                say(f"[{name}] seen: {p} (after {time.time() - t0:.0f}s)")
+                return True
+        time.sleep(1.5)
+    say(f"[{name}] NOT SEEN after {timeout}s: {preds}")
     return False
 
 
@@ -91,15 +110,15 @@ def snap(name):
     labs = []
     for m in re.finditer(r'<XCUIElementType(\w+)[^>]*?\blabel="([^"]+)"', xml):
         t, label = m.group(1), m.group(2)
-        item = f"{t}:{label[:60]}"
+        item = f"{t}:{label[:48]}"
         if t in ("Button", "Link", "Cell", "MenuItem", "Alert", "Sheet", "StaticText", "Other") and item not in labs:
             labs.append(item)
-    say(f"== {name}: " + " | ".join(labs[:80]))
+    say(f"== {name}: " + " | ".join(labs[:90]))
 
 
 def openurl(u):
     subprocess.run(["xcrun", "simctl", "openurl", "booted", u], check=False)
-    time.sleep(6)
+    time.sleep(4)
 
 
 def launch(bid):
@@ -112,59 +131,66 @@ def terminate(bid):
     time.sleep(1)
 
 
-def flow_inline():  # 링크를 그냥 열었을 때(대표 폰: 한 명짜리 미리보기)
+def flow_inline():  # 링크를 그냥 열었을 때: 미리보기 -> 공유
     terminate("com.apple.mobilesafari")
     openurl(BASE + "m/2.vcf")
+    wait_for("inline-preview", ["label == 'Create New Contact'"], 60)
     snap("10-inline-vcf")
-    tap_any("inline-share", "label == 'Share'", "label CONTAINS[c] 'share'")
-    snap("11-inline-after-share-try")
-    tap_any("inline-close", "label == 'Done'", "label == 'Cancel'", "label == 'Close'")
+    wait_tap("inline-share", ["label == 'Share'", "name == 'Share'"], 20)
+    snap("11-inline-share-sheet")
+    # 공유 시트에서 연락처 관련 항목이 있으면 눌러 본다
+    if wait_tap("share-contacts", ["label == 'Contacts'", "label CONTAINS[c] 'add all'", "label CONTAINS[c] 'contacts'"], 10):
+        snap("12-inline-after-contacts")
+        wait_tap("add-all", ["label CONTAINS[c] 'add all'"], 10)
+        snap("13-inline-after-add-all")
 
 
 def flow_download():  # 우리 페이지: 저장 -> 다운로드 -> 목록 -> 파일 -> 공유
     terminate("com.apple.mobilesafari")
     openurl(BASE + "?me=2")
+    wait_for("page", ["label CONTAINS '명 저장'"], 60)
     snap("20-page")
-    tap_any("save", "label CONTAINS '명 저장'")
+    wait_tap("save", ["label CONTAINS '명 저장'"], 20)
     snap("21-after-save-tap")
-    tap_any("download-prompt", "label == 'Download'", "label CONTAINS[c] 'download'")
+    wait_tap("download-prompt", ["label == 'Download'", "label CONTAINS[c] 'download'"], 25)
     snap("22-after-download")
-    tap_any("downloads-button", "label == 'Downloads'", "name == 'Downloads'", "label CONTAINS[c] 'downloads'")
+    wait_tap("downloads-button", ["label == 'Downloads'", "label CONTAINS[c] 'downloads'", "name CONTAINS[c] 'download'"], 25)
     snap("23-downloads-list")
-    tap_any("file", "label CONTAINS 'JTV7'", "label CONTAINS 'vcf'")
+    wait_tap("file", ["label CONTAINS 'JTV7'", "label CONTAINS 'vcf'"], 20)
     snap("24-preview")
-    tap_any("share", "label == 'Share'", "label CONTAINS[c] 'share'")
+    wait_tap("share", ["label == 'Share'", "label CONTAINS[c] 'share'"], 15)
     snap("25-share-sheet")
-    tap_any("contacts-action", "label == 'Contacts'", "label CONTAINS[c] 'contact'")
-    snap("26-after-contacts-action")
-    tap_any("add-all", "label CONTAINS[c] 'add all'")
-    snap("27-after-add-all")
+    if wait_tap("contacts-action", ["label == 'Contacts'", "label CONTAINS[c] 'contacts'"], 10):
+        snap("26-after-contacts-action")
+        wait_tap("add-all", ["label CONTAINS[c] 'add all'"], 10)
+        snap("27-after-add-all")
 
 
 def flow_files():  # 파일 앱에서 받은 파일 열기
     launch("com.apple.DocumentsApp")
     snap("30-files")
-    tap_any("browse", "label == 'Browse'")
+    wait_tap("browse", ["label == 'Browse'"], 20)
     snap("31-browse")
-    tap_any("on-my-iphone", "label CONTAINS 'On My iPhone'")
+    wait_tap("on-my-iphone", ["label CONTAINS 'On My iPhone'"], 15)
     snap("32-on-my-iphone")
-    tap_any("downloads-folder", "label == 'Downloads'")
+    wait_tap("downloads-folder", ["label == 'Downloads'"], 15)
     snap("33-downloads-folder")
-    tap_any("file", "label CONTAINS 'JTV7'", "label CONTAINS 'vcf'")
+    wait_tap("file", ["label CONTAINS 'JTV7'", "label CONTAINS 'vcf'"], 15)
     snap("34-file-preview")
-    tap_any("share", "label == 'Share'", "label CONTAINS[c] 'share'")
+    wait_tap("share", ["label == 'Share'", "label CONTAINS[c] 'share'"], 15)
     snap("35-share-sheet")
-    tap_any("contacts", "label == 'Contacts'", "label CONTAINS[c] 'contact'")
-    snap("36-after-contacts")
-    tap_any("add-all", "label CONTAINS[c] 'add all'")
-    snap("37-after-add-all")
+    if wait_tap("contacts", ["label == 'Contacts'", "label CONTAINS[c] 'contacts'"], 10):
+        snap("36-after-contacts")
+        wait_tap("add-all", ["label CONTAINS[c] 'add all'"], 10)
+        snap("37-after-add-all")
 
 
 def flow_webshare():  # 웹 공유 시트(파일 첨부)에 무엇이 뜨는지
     terminate("com.apple.mobilesafari")
     openurl("http://localhost:8000/webshare.html")
+    wait_for("webshare-page", ["label CONTAINS 'SHARE-VCF'"], 60)
     snap("40-webshare-page")
-    tap_any("share-btn", "label CONTAINS 'SHARE-VCF'")
+    wait_tap("share-btn", ["label CONTAINS 'SHARE-VCF'"], 20)
     snap("41-webshare-sheet")
 
 
