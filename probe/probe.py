@@ -149,86 +149,69 @@ def tips():  # 사파리 첫 실행 안내 말풍선 닫기
             time.sleep(1)
 
 
-def contacts_count(tag):
+NAMES = ["김하나", "박셋", "정다섯", "최넷", "한여섯"]
+
+
+def contacts_state(tag):
     launch("com.apple.MobileAddressBook")
     xml = snap(tag)
-    names = sorted(set(HANGUL.findall(xml)))
-    say(f"CONTACTS[{tag}]: {len(names)} -> {names}")
-    return names
+    st = {n: len(re.findall(r'XCUIElementTypeCell[^>]*label="%s"' % n, xml)) for n in NAMES}
+    say(f"CONTACTS[{tag}]: {st}")
+    return st
 
 
-def flow_inline_import():  # 링크 미리보기 -> 공유 -> 연락처 가져오기 -> 연락처 앱에서 인원 세기(두 번 반복해 중복도 본다)
-    contacts_count("05-contacts-before")
-    for rnd in (1, 2):
-        terminate("com.apple.mobilesafari")
-        openurl(BASE + "m/2.vcf")
-        wait_for("inline-preview", ["label == 'Create New Contact'"], 60)
-        tips()
-        snap(f"1{rnd}0-inline-vcf")
-        if not wait_tap("inline-share", ["label == 'Share'", "name == 'Share'"], 15):
-            snap(f"1{rnd}1-no-share-button")
-            break
-        snap(f"1{rnd}1-share-sheet")
-        if wait_tap("share-contacts", ["type == 'XCUIElementTypeCell' AND label == 'Contacts'", "label == 'Contacts'"], 10, n=PICK):
-            for i in range(3):
-                snap(f"1{rnd}2-after-contacts-{i}")
-                for p in ("label CONTAINS[c] 'add all'", "label CONTAINS[c] 'create new contacts'", "label == 'Done'", "label == 'Save'", "label == 'Add'"):
-                    if tap(p):
-                        say("[after-contacts] tapped", p)
-                        time.sleep(2)
-                        break
-                else:
-                    break
-        contacts_count(f"1{rnd}3-contacts-after-import-{rnd}")
-
-
-def flow_download():  # 우리 페이지: 저장 -> 다운로드 -> 목록 -> 파일 -> 공유
+def open_page():
     terminate("com.apple.mobilesafari")
     openurl(BASE + "?me=2")
     wait_for("page", ["label CONTAINS '명 저장'"], 60)
     tips()
-    snap("20-page")
-    wait_tap("save", ["label CONTAINS '명 저장'"], 20)
-    snap("21-after-save-tap")
-    wait_tap("download-prompt", ["type == 'XCUIElementTypeButton' AND label == 'Download'", "type == 'XCUIElementTypeButton' AND label CONTAINS[c] 'download'"], 15)
-    snap("22-after-download")
-    wait_tap("downloads-button", ["type == 'XCUIElementTypeButton' AND label CONTAINS[c] 'download'"], 15)
-    snap("23-downloads-list")
-    if wait_tap("file", ["type != 'XCUIElementTypeOther' AND type != 'XCUIElementTypeStaticText' AND label CONTAINS 'JTV7'"], 10):
-        snap("24-preview")
-        if wait_tap("share", ["label == 'Share'"], 10):
-            snap("25-share-sheet")
 
 
-def flow_files():  # 파일 앱에서 받은 파일 열기
-    launch("com.apple.DocumentsApp")
-    snap("30-files")
-    wait_tap("browse", ["label == 'Browse'"], 20)
-    snap("31-browse")
-    wait_tap("on-my-iphone", ["label CONTAINS 'On My iPhone'"], 15)
-    snap("32-on-my-iphone")
-    wait_tap("downloads-folder", ["label == 'Downloads'"], 8)
-    snap("33-downloads-folder")
-    if wait_tap("file", ["type != 'XCUIElementTypeOther' AND type != 'XCUIElementTypeStaticText' AND label CONTAINS 'JTV7'"], 8):
-        snap("34-file-preview")
-        if wait_tap("share", ["label == 'Share'"], 10):
-            snap("35-share-sheet")
+def untick(name):
+    ok = tap(f"type == 'XCUIElementTypeStaticText' AND label == '{name}'")
+    say(f"[untick {name}] {ok}")
+    time.sleep(0.8)
 
 
-def flow_webshare():  # 웹 공유 시트(파일 첨부)에 무엇이 뜨는지
-    terminate("com.apple.mobilesafari")
-    openurl("http://localhost:8000/webshare.html")
-    wait_for("webshare-page", ["label CONTAINS 'SHARE-VCF'"], 60)
+def share_to_contacts(tag):
+    if not wait_for("preview", ["label == 'Create New Contact'", "label BEGINSWITH 'Update Contact'"], 60):
+        snap(tag + "-no-preview")
+        return False
     tips()
-    snap("40-webshare-page")
-    wait_tap("share-btn", ["label CONTAINS 'SHARE-VCF'"], 20)
-    snap("41-webshare-sheet")
+    snap(tag + "-preview")
+    if not wait_tap("share", ["label == 'Share'"], 15):
+        snap(tag + "-no-share-button")
+        return False
+    snap(tag + "-share-sheet")
+    ok = wait_tap("contacts", ["type == 'XCUIElementTypeCell' AND label == 'Contacts'"], 10, n=PICK)
+    time.sleep(4)
+    snap(tag + "-after-contacts")
+    return ok
+
+
+def flow_partial():  # 일부만 고르고 저장 -> 미리보기 -> 공유 -> 연락처 -> 고른 사람만 들어갔는지
+    contacts_state("00-before")
+    open_page()
+    untick("박셋")
+    untick("최넷")
+    snap("10-page-unticked")
+    wait_tap("save3", ["label CONTAINS '3명 저장'"], 10)
+    share_to_contacts("11-partial")
+    contacts_state("12-after-partial")
+
+
+def flow_full():  # 전원 저장(이미 3명 있는 상태) -> 5명이 되고 중복은 없어야 한다
+    open_page()
+    snap("20-page-full")
+    wait_tap("save5", ["label CONTAINS '5명 저장'"], 10)
+    share_to_contacts("21-full")
+    contacts_state("22-after-full")
 
 
 if __name__ == "__main__":
     subprocess.run("sw_vers; xcrun simctl list devices booted; xcrun simctl list runtimes", shell=True, check=False)
     session()
-    for f in (flow_inline_import, flow_download, flow_files, flow_webshare):
+    for f in (flow_partial, flow_full):
         try:
             f()
         except Exception as e:  # noqa: BLE001

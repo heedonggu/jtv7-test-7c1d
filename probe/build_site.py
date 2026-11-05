@@ -124,11 +124,11 @@ h1{margin:14px 0 6px;font-size:28px;line-height:1.25;letter-spacing:-.02em}
   <section id="mine" hidden>
     <p class="lead"><b id="who"></b>님, 나를 뺀 @COUNT@명이에요. 빼고 싶은 사람이나 이미 저장해 둔 사람은 체크를 끄고, 맨 아래 “저장”을 누르세요.</p>
     <div class="after">
-      <p><b>아이폰</b></p>
+      <p><b>아이폰</b> (Safari에서 열어야 해요)</p>
       <ol>
-        <li>“저장”을 누르고 “다운로드”를 누르세요.</li>
-        <li>주소창 옆 ⬇ 단추를 누르고 JTV7기 파일을 누르세요.</li>
-        <li>위쪽 “모든 연락처 추가”를 누르세요. 안 보이면 왼쪽 아래 공유 버튼 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M7 11H5.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> → “연락처”. 선택지가 뜨면 “새로운 연락처 생성” 말고 “모든 연락처 추가”를 고르세요.</li>
+        <li>“저장”을 누르세요. 첫 사람 한 명만 보이는 화면이 떠요. 정상이에요.</li>
+        <li>그 화면 <b>오른쪽 위</b> 공유 버튼 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M7 11H5.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> 을 누르세요.</li>
+        <li>뜨는 창에서 <b>“연락처”</b>를 누르면 고른 사람이 한꺼번에 저장돼요. “연락처”가 두 곳(위 아이콘 줄, 아래 목록)에 있으면 한쪽이 안 될 때 다른 쪽을 누르세요.</li>
       </ol>
       <p><b>안드로이드</b> “저장”을 누르고 알림의 “열기” → 저장할 계정을 고르세요.</p>
     </div>
@@ -145,7 +145,7 @@ h1{margin:14px 0 6px;font-size:28px;line-height:1.25;letter-spacing:-.02em}
 @NAMES@
     </nav>
     <ul class="how">
-      <li><b>아이폰</b><span>이름을 누르고 “저장” → “다운로드” → 주소창 옆 ⬇ → 파일 누르기 → “모든 연락처 추가”.</span></li>
+      <li><b>아이폰</b><span>Safari에서 이름을 누르고 “저장” → 한 명만 보이는 화면 오른쪽 위 공유 버튼 → “연락처”.</span></li>
       <li><b>안드로이드</b><span>이름을 누르고 “저장” → 알림의 “열기” → 저장할 계정 고르기.</span></li>
     </ul>
     <p class="note">저장한 뒤 연락처에서 “JTV 7기”로 검색하면 나와요.</p>
