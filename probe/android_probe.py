@@ -123,6 +123,15 @@ def main():
     pk = sh("pm list packages")
     say("packages:", [p for p in pk.split() if re.search(r"chrome|browser|contacts|documentsui|downloads|vending|samsung", p, re.I)])
     sh("settings put global window_animation_scale 0; settings put global transition_animation_scale 0; settings put global animator_duration_scale 0")
+    for _ in range(4):
+        if any("isn't responding" in label(n) or "not responding" in label(n) for n in nodes(dump())):
+            for n in nodes(dump()):
+                if label(n) in ("Wait", "WAIT"):
+                    tap(n)
+                    break
+            time.sleep(4)
+        else:
+            break
     count("00-before")
 
     # ① 크롬으로 페이지를 열고 '저장'을 눌러 본다 (크롬 첫 실행 안내를 건너뛰는 명령줄 파일)
@@ -177,29 +186,32 @@ def main():
     fname = files[0]
     say("import file:", fname, sh(f"ls -l '/sdcard/Download/{fname}'").strip())
 
-    # ② '열기': 다운로드 알림의 '열기'는 파일의 content:// 주소를 MIME(text/x-vcard)과 함께 VIEW 로 넘긴다
-    q = sh("content query --uri content://media/external/downloads --projection _id:_display_name")
-    say("downloads:", q.strip().replace("\n", " ; ")[:400])
-    m = re.search(r"_id=(\d+), _display_name=" + re.escape(fname), q)
-    uri = f"content://media/external/downloads/{m.group(1)}" if m else f"file:///sdcard/Download/{fname}"
-    say("open uri:", uri)
-
-    def open_and_import(tag):
+    # ② 파일 앱(다운로드)에서 받은 파일을 눌러 연다. 쉘의 am start 로 content:// 를 넘기면 권한이 없어 'Cannot load uri to local storage' 로 실패했다
+    #    (실제 사용자는 크롬 '열기' 배너·알림·내 파일 앱으로 열고, 그때는 시스템이 읽기 권한을 같이 넘긴다)
+    def open_from_files_app(tag):
         sh("input keyevent KEYCODE_HOME")
-        out = sh(f"am start -a android.intent.action.VIEW -t text/x-vcard -d '{uri}' --grant-read-uri-permission")
-        say(f"[{tag}] am start:", out.strip().replace("\n", " ")[:300])
+        time.sleep(1)
+        say(f"[{tag}] VIEW_DOWNLOADS:", " ".join(sh("am start -a android.intent.action.VIEW_DOWNLOADS").split())[:200])
         time.sleep(6)
-        screen(f"2-{tag}-first")
-        press_any(IMPORT_BUTTONS, f"2-{tag}", 60)
+        xml = screen(f"3-{tag}-files")
+        hit = [n for n in nodes(xml) if fname in label(n)]
+        if not hit:
+            say(f"[{tag}] 파일 목록에서 {fname} 를 못 찾음")
+            return None
+        tap(hit[0])
+        time.sleep(5)
+        screen(f"3-{tag}-opened")
+        press_any(IMPORT_BUTTONS, f"3-{tag}", 60)
         time.sleep(8)
-        screen(f"2-{tag}-end")
+        screen(f"3-{tag}-end")
         r = count(f"after-{tag}")
         logcat(tag)
         return r
 
-    a = open_and_import("import1")
-    b = open_and_import("import2-same-file")  # ④ 같은 파일을 한 번 더
-    say(f"RESULT first import: contacts={a[0]} raw={a[1]} | second import: contacts={b[0]} raw={b[1]}")
+    base = count("before-files-app")
+    a = open_from_files_app("import1")
+    b = open_from_files_app("import2-same-file") if a and a[0] > base[0] else None  # ④ 가져와졌으면 같은 파일을 한 번 더
+    say(f"RESULT first import: {a} | second import (same file): {b}")
 
 
 if __name__ == "__main__":
