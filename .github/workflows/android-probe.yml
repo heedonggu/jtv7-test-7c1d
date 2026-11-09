@@ -1,0 +1,57 @@
+name: android-probe
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fake roster and site (no real data)
+        run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          pip -q install openpyxl
+          python - <<'PY'
+          import openpyxl
+          wb = openpyxl.Workbook()
+          ws = wb.active
+          ws.append([None, "fake roster", None, None])
+          for i, n in enumerate(["김하나", "이둘", "박셋", "최넷", "정다섯", "한여섯"], start=1):
+              ws.append([i, n, f"010-0000-{1000 + i}", ""])
+          wb.save("명단.xlsx")
+          PY
+          python probe/build_site.py 명단.xlsx site
+          echo "SLUG=$(ls site)" >> "$GITHUB_ENV"
+          nohup python3 -m http.server 8000 --bind 0.0.0.0 --directory site > http.log 2>&1 &
+          sleep 2
+          curl -sI "http://localhost:8000/" | head -1
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android emulator probe
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: bash -c 'SLUG="$SLUG" OUT=shots python3 probe/android_probe.py'
+
+      - name: Upload screenshots and trees
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-android
+          path: |
+            shots
+            http.log
+          retention-days: 3
