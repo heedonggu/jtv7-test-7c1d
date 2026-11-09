@@ -14,7 +14,7 @@ SLUG = os.environ["SLUG"]
 HOST = "http://10.0.2.2:8000"
 LOG = open(OUT / "log.txt", "w", encoding="utf-8")
 FRE_BUTTONS = ("Accept & continue", "No thanks", "Use without an account", "Got it", "Not now", "Skip", "No, thanks", "Continue", "수락 및 계속", "사용 안함")
-IMPORT_BUTTONS = ("OK", "확인", "Import", "IMPORT", "가져오기", "Phone", "Device", "DEVICE", "Device only", "Local", "Save", "SAVE", "Done", "Allow", "ALLOW", "While using the app", "Only this time")
+IMPORT_BUTTONS = ("OK", "확인", "Import", "IMPORT", "가져오기", "Phone", "Device", "DEVICE", "Device only", "Local", "Save", "SAVE", "Done", "Allow", "ALLOW", "While using the app", "Only this time", "Contacts", "Google Contacts", "Just once", "JUST ONCE", "Always", "ALWAYS", "Next", "NEXT", "Continue")
 
 
 def say(*a):
@@ -93,6 +93,15 @@ def count(tag):
     return nc, nr
 
 
+def logcat(tag):
+    out = adb("logcat", "-d", "-t", "4000")
+    keep = [l for l in out.splitlines() if re.search(r"vcard|importvcard|VCardImport|ContactsProvider|contacts.*(import|error|exception)", l, re.I)]
+    say(f"LOGCAT[{tag}] ({len(keep)} lines):")
+    for l in keep[-25:]:
+        say("   ", l[:240])
+    adb("logcat", "-c")
+
+
 def press_any(buttons, tag, seconds=40):
     """보이는 버튼 중 목록에 있는 것을 누르며 화면이 바뀌길 기다린다."""
     t0 = time.time()
@@ -135,10 +144,25 @@ def main():
             if fre:
                 tap(fre[0])
             time.sleep(4)
-        time.sleep(8)
-        screen("1-after-save-tap")
-        press_any(("Download", "다운로드", "Keep", "Allow", "ALLOW"), "1-download-prompt", 15)
-        time.sleep(4)
+        adb("logcat", "-c")
+        for i in range(10):  # 받기가 끝나면 화면 위에 'File downloaded ... Open' 배너가 뜬다
+            time.sleep(1.5)
+            xml = dump()
+            op = [n for n in nodes(xml) if label(n) in ("Open", "열기") and n["pkg"] == "com.android.chrome"]
+            if op:
+                screen("1-after-save-tap")
+                tap(op[0])
+                say("chrome 'Open' tapped")
+                break
+        else:
+            screen("1-after-save-tap")
+        time.sleep(6)
+        screen("1-after-open-tap")
+        press_any(IMPORT_BUTTONS, "1-open", 45)
+        time.sleep(6)
+        screen("1-after-open-end")
+        count("after-chrome-open")
+        logcat("after-chrome-open")
         say("saved tapped:", saved, "| Downloads:", sh("ls -l /sdcard/Download").strip().replace("\n", " ; ")[:300])
     else:
         say("chrome: 없음 -> 파일을 직접 밀어 넣는다")
@@ -169,7 +193,9 @@ def main():
         press_any(IMPORT_BUTTONS, f"2-{tag}", 60)
         time.sleep(8)
         screen(f"2-{tag}-end")
-        return count(f"after-{tag}")
+        r = count(f"after-{tag}")
+        logcat(tag)
+        return r
 
     a = open_and_import("import1")
     b = open_and_import("import2-same-file")  # ④ 같은 파일을 한 번 더

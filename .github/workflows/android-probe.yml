@@ -3,6 +3,12 @@ on: workflow_dispatch
 
 jobs:
   probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gapps, api: 34, target: google_apis }
+          - { name: aosp, api: 33, target: default }
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -37,8 +43,8 @@ jobs:
       - name: Run Android emulator probe
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
           arch: x86_64
           profile: pixel_6
           ram-size: 3072M
@@ -50,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: probe-android
+          name: probe-android-${{ matrix.name }}
           path: |
             shots
             http.log
